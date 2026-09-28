@@ -4,15 +4,6 @@
 
 ---
 
-[![React 19](https://img.shields.io/badge/React-19.0-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![MediaPipe](https://img.shields.io/badge/Google-MediaPipe%20Vision-0078D4?logo=google&logoColor=white)](https://developers.google.com/mediapipe)
-[![Tailwind CSS v4](https://img.shields.io/badge/Tailwind-CSS%20v4-38BDF8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Vite 8](https://img.shields.io/badge/Vite-8.0-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-
----
-
 ## 📋 Table of Contents
 
 - [Visual Tour & Key Features](#-visual-tour--key-features)
