@@ -218,8 +218,3 @@ npm run preview
 
 For detailed functional specifications, mathematical models, non-functional requirements, and future roadmap, refer to the [Product Requirements Document (PRD.md)](docs/PRD.md).
 
----
-
-## 📜 License
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
