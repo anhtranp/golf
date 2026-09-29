@@ -148,15 +148,22 @@ Traditional golf swing analysis systems (TrackMan, GCQuad, Gears Golf) require p
 * **FR-08.2:** Each telemetry metric in fullscreen shall display its corresponding target benchmark (e.g. `PGA: 95°+`, `PGA: 45°`).
 * **FR-08.3:** A floor stance alignment guide (`[Lead Foot]`, `Target Path`, `[Trail Foot]`) shall be displayed at the base of the screen.
 
-### FR-09: Swing Capture Workflow & Countdown
-* **FR-09.1:** Clicking "Record Swing" or pressing <kbd>Space</kbd> shall trigger a 3-second visual and audio countdown (`3`, `2`, `1`) with an animated indicator overlay.
-* **FR-09.2:** Following the countdown, the system shall record high-frequency telemetry for 3,200ms with a real-time percentage progress bar.
-* **FR-09.3:** Upon capture completion, the system shall dispatch `onSwingCaptured` with final metrics (shoulder turn, hip rotation, detected phase, clubhead speed) to update the dashboard.
+### FR-09: Solo Practice Swing Capture Workflow & Generous Ergonomics
+* **FR-09.1:** Clicking "Record Swing" or pressing <kbd>Space</kbd> shall trigger a generous preparation countdown (default 8 seconds; configurable to 5s, 8s, or 12s) providing the golfer ample time to walk 8–10 feet to the mat, grip the club, and assume athletic address posture.
+* **FR-09.2:** The system shall synthesize Web Audio chimes at countdown ticks 3, 2, 1 and a crisp start chime ("BEEP — SWING!") at 0 so the golfer never has to glance back at the monitor while setting posture.
+* **FR-09.3:** Following the countdown, the system shall capture swing kinematics across a generous 8-second window (default 8000ms; configurable to 6s, 8s, or 10s) with live seconds remaining and an interactive "Done Early" option.
+* **FR-09.4:** A high-frequency trajectory frame buffer shall sample angular rotation, spine tilt, and arm lag every 50ms across the entire window, calculating peak dynamic metrics (`peakShoulderTurn`, `peakHipRotation`, `spineTilt`, `clubSpeed`).
 
 ### FR-10: PGA Tour Benchmark Comparison & AI Coaching Engine
 * **FR-10.1:** The dashboard shall present side-by-side comparative bars measuring player metrics against PGA Tour elite standards (Hip Rotation, Shoulder Rotation, Tempo Ratio, Club Path, Hand Position, Wrist Lag).
 * **FR-10.2:** The system shall render a circular SVG scoring ring displaying Overall Score out of 100 with percentile ranking and Consistency Index.
 * **FR-10.3:** The system shall automatically identify the "Weakest Phase" and highlight it in terra-cotta red (`#C0503A`) with actionable coaching cues and prescribed physical drills.
+
+### FR-11: Google Gemini AI Biomechanical Diagnostics (Option 2)
+* **FR-11.1:** The system shall integrate with `@google/genai` utilizing the `gemini-2.5-flash` model with structured JSON output schema (`responseMimeType: "application/json"`).
+* **FR-11.2:** The Gemini AI engine shall receive captured kinematic sequence telemetry, evaluate 6 swing phases (Address, Backswing, Top, Downswing, Impact, Follow-through), generate dynamic scores (0–100), quantify PGA Tour deltas, and produce 3 prioritized actionable coaching drills.
+* **FR-11.3:** The system shall provide an in-app Gemini API Key configuration modal with live connection testing and local storage persistence.
+* **FR-11.4:** If no Gemini API key is provided, the system shall automatically and silently fall back to an onboard dynamic algorithmic biomechanics engine, ensuring zero downtime and offline operation.
 
 ---
 

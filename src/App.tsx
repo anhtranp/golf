@@ -6,17 +6,38 @@ import {
   Sparkles,
   Maximize2,
   Minimize2,
+  Settings,
+  Key,
+  ExternalLink,
+  X,
+  Cpu,
+  Zap,
+  Check,
 } from "lucide-react"
 import CameraMotionTracker, {
   CameraMotionTrackerHandle,
 } from "./components/CameraMotionTracker"
+import {
+  analyzeSwingWithGemini,
+  CapturedSwingPayload,
+  AIPhaseResult,
+  AIPgaComparison,
+  AICoachInsight,
+} from "./utils/aiCoachService"
+import { GoogleGenAI } from "@google/genai"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type Phase = "Address" | "Backswing" | "Top" | "Downswing" | "Impact" | "Follow-through"
+export type Phase =
+  | "Address"
+  | "Backswing"
+  | "Top"
+  | "Downswing"
+  | "Impact"
+  | "Follow-through"
 type SessionState = "ready" | "recording" | "analyzing" | "complete"
 
-interface PhaseData {
+export interface PhaseData {
   name: Phase
   order: string
   score: number
@@ -29,9 +50,9 @@ interface PhaseData {
   note: string
 }
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// ── Constants (Initial Benchmark Defaults) ───────────────────────────────────
 
-const PHASES: PhaseData[] = [
+const INITIAL_PHASES: PhaseData[] = [
   {
     name: "Address",
     order: "01",
@@ -110,9 +131,9 @@ const PHASES: PhaseData[] = [
   },
 ]
 
-const WEAKEST_PHASE = "Downswing"
+const INITIAL_WEAKEST_PHASE: Phase = "Downswing"
 
-const PGA_COMPARISONS = [
+const INITIAL_PGA_COMPARISONS = [
   {
     label: "Hip Rotation",
     my: "42°",
@@ -163,7 +184,7 @@ const PGA_COMPARISONS = [
   },
 ]
 
-const COACH_INSIGHTS = [
+const INITIAL_COACH_INSIGHTS = [
   {
     index: "01",
     phase: "Downswing",
@@ -898,42 +919,153 @@ export default function App() {
   const trackerRef = useRef<CameraMotionTrackerHandle | null>(null)
   const [isTrackerFullscreen, setIsTrackerFullscreen] = useState(false)
 
-  const activePhaseData = PHASES.find((p) => p.name === activePhase)!
-  const overallScore = Math.round(
-    PHASES.reduce((sum, p) => sum + p.score, 0) / PHASES.length,
-  )
-  const weakestPhaseScore = Math.min(...PHASES.map((p) => p.score))
-  const consistencyScore = 82
-
-  function handleCameraSwingCaptured(metrics: {
-    shoulderTurn: number
-    hipRotation: number
-    phase: string
-    clubSpeed: number
-  }) {
-    setSessionState("complete")
-    setShowResults(true)
-    if (
-      [
-        "Address",
-        "Backswing",
-        "Top",
-        "Downswing",
-        "Impact",
-        "Follow-through",
-      ].includes(metrics.phase)
-    ) {
-      setActivePhase(metrics.phase as Phase)
-    } else {
-      setActivePhase("Impact")
-    }
-    setRecordedClubSpeed(`${metrics.clubSpeed}`)
-    setRecordedShoulderTurn(`${metrics.shoulderTurn}°`)
-    setRecordedHipRotation(`${metrics.hipRotation}°`)
-    setCapturedNotification(
-      `AI Motion Tracked: ${metrics.shoulderTurn}° shoulder turn · ${metrics.hipRotation}° hip rotation · ${metrics.phase} detected`,
+  const [phases, setPhases] = useState<PhaseData[]>(INITIAL_PHASES)
+  const [pgaComparisons, setPgaComparisons] = useState(INITIAL_PGA_COMPARISONS)
+  const [coachInsights, setCoachInsights] = useState(INITIAL_COACH_INSIGHTS)
+  const [overallScore, setOverallScore] = useState(84)
+  const [consistencyScore, setConsistencyScore] = useState(82)
+  const [weakestPhaseName, setWeakestPhaseName] =
+    useState<Phase>(INITIAL_WEAKEST_PHASE)
+  const [aiSource, setAiSource] = useState<
+    "gemini" | "algorithmic" | "initial"
+  >("initial")
+  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false)
+  const [geminiApiKey, setGeminiApiKey] = useState(() => {
+    return (
+      localStorage.getItem("gemini_api_key") ||
+      (import.meta as any).env?.VITE_GEMINI_API_KEY ||
+      ""
     )
-    setTimeout(() => setCapturedNotification(null), 6000)
+  })
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false)
+  const [apiKeyInput, setApiKeyInput] = useState("")
+  const [apiKeyTestMessage, setApiKeyTestMessage] = useState<string | null>(
+    null,
+  )
+  const [isTestingKey, setIsTestingKey] = useState(false)
+
+  const activePhaseData =
+    phases.find((p) => p.name === activePhase) || phases[0]
+  const weakestPhaseScore = Math.min(...phases.map((p) => p.score))
+
+  async function handleTestApiKey() {
+    if (!apiKeyInput.trim()) {
+      setApiKeyTestMessage("Please enter an API key first.")
+      return
+    }
+    setIsTestingKey(true)
+    setApiKeyTestMessage(null)
+    try {
+      const ai = new GoogleGenAI({ apiKey: apiKeyInput.trim() })
+      const res = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: "Respond with the word 'OK' to confirm API connection.",
+      })
+      if (res.text) {
+        setApiKeyTestMessage("✓ Successfully connected to Gemini 2.5 Flash!")
+      } else {
+        setApiKeyTestMessage("Connected, but received empty response.")
+      }
+    } catch (e: any) {
+      setApiKeyTestMessage(
+        `✕ Connection failed: ${e?.message || "Invalid API key"}`,
+      )
+    } finally {
+      setIsTestingKey(false)
+    }
+  }
+
+  function handleSaveApiKey() {
+    const key = apiKeyInput.trim()
+    setGeminiApiKey(key)
+    if (key) {
+      localStorage.setItem("gemini_api_key", key)
+      setCapturedNotification(
+        "✨ Gemini AI Connected: Live Biomechanics Engine Ready!",
+      )
+    } else {
+      localStorage.removeItem("gemini_api_key")
+      setCapturedNotification(
+        "⚡ Switched to Local Kinematic Biomechanics Engine.",
+      )
+    }
+    setShowApiKeyModal(false)
+    setTimeout(() => setCapturedNotification(null), 5000)
+  }
+
+  async function handleCameraSwingCaptured(metrics: any) {
+    const isPayload = metrics.frames !== undefined
+    const swingPayload: CapturedSwingPayload = isPayload
+      ? metrics
+      : {
+          peakShoulderTurn: metrics.shoulderTurn || 89,
+          peakHipRotation: metrics.hipRotation || 42,
+          spineTilt: 25,
+          leadArmAngle: 35,
+          detectedPhase: metrics.phase || "Impact",
+          clubSpeed: metrics.clubSpeed || 94,
+          durationSec: 8,
+          frames: [],
+        }
+
+    setRecordedClubSpeed(`${swingPayload.clubSpeed}`)
+    setRecordedShoulderTurn(`${swingPayload.peakShoulderTurn}°`)
+    setRecordedHipRotation(`${swingPayload.peakHipRotation}°`)
+
+    setSessionState("analyzing")
+    setIsAiAnalyzing(true)
+    setCapturedNotification(
+      `Captured ${swingPayload.peakShoulderTurn}° shoulder turn & ${swingPayload.peakHipRotation}° pelvic rotation. Running ${
+        geminiApiKey ? "Gemini 2.5 Flash AI" : "Kinematic Sequence Engine"
+      }...`,
+    )
+
+    try {
+      const result = await analyzeSwingWithGemini(
+        swingPayload,
+        geminiApiKey || undefined,
+      )
+      setPhases(result.phases as PhaseData[])
+      setPgaComparisons(result.pgaComparisons)
+      setCoachInsights(result.coachInsights)
+      setOverallScore(result.overallScore)
+      setConsistencyScore(result.consistencyScore)
+      setWeakestPhaseName(result.weakestPhase as Phase)
+      setAiSource(result.source)
+
+      if (
+        [
+          "Address",
+          "Backswing",
+          "Top",
+          "Downswing",
+          "Impact",
+          "Follow-through",
+        ].includes(swingPayload.detectedPhase)
+      ) {
+        setActivePhase(swingPayload.detectedPhase as Phase)
+      } else {
+        setActivePhase("Impact")
+      }
+
+      setSessionState("complete")
+      setShowResults(true)
+      setIsAiAnalyzing(false)
+
+      const sourceLabel =
+        result.source === "gemini"
+          ? "✨ Gemini 2.5 Flash Biomechanical Analysis Complete!"
+          : "⚡ Real-Time Kinematic Biomechanics Analysis Complete!"
+      setCapturedNotification(
+        `${sourceLabel} Phase Scores, PGA Tour Deltas & Practice Drills dynamically updated.`,
+      )
+      setTimeout(() => setCapturedNotification(null), 8000)
+    } catch (err) {
+      console.error("AI Analysis error:", err)
+      setIsAiAnalyzing(false)
+      setSessionState("complete")
+      setShowResults(true)
+    }
   }
 
   function handleStartSwing() {
@@ -947,6 +1079,7 @@ export default function App() {
 
   function handleAnalyze() {
     setSessionState("analyzing")
+    setIsAiAnalyzing(true)
     setAnalysisProgress(0)
     analysisRef.current = setInterval(() => {
       setAnalysisProgress((p) => {
@@ -954,6 +1087,7 @@ export default function App() {
           clearInterval(analysisRef.current!)
           setSessionState("complete")
           setShowResults(true)
+          setIsAiAnalyzing(false)
           setActivePhase("Impact")
           return 100
         }
@@ -1093,7 +1227,32 @@ export default function App() {
                     : "Analysis Complete"}
             </span>
           </div>
-          <div style={{ display: "flex", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <button
+              onClick={() => {
+                setApiKeyInput(geminiApiKey)
+                setApiKeyTestMessage(null)
+                setShowApiKeyModal(true)
+              }}
+              className="flex items-center gap-1.5 px-3 py-1 rounded border transition-all cursor-pointer text-xs font-mono shadow-sm"
+              style={{
+                backgroundColor: geminiApiKey
+                  ? "rgba(34, 197, 94, 0.1)"
+                  : "var(--color-cream)",
+                borderColor: geminiApiKey ? "#22C55E" : "var(--color-border)",
+                color: geminiApiKey ? "#15803D" : "var(--color-charcoal)",
+              }}
+              title="Configure Google Gemini API Key for dynamic swing biomechanics coaching"
+            >
+              <Sparkles
+                size={12}
+                className={geminiApiKey ? "text-[#22C55E]" : "text-[#737E70]"}
+              />
+              <span className="font-semibold text-[11px]">
+                {geminiApiKey ? "Gemini 2.5 Flash" : "Connect Gemini AI"}
+              </span>
+              <Settings size={11} className="opacity-60 ml-0.5" />
+            </button>
             <span
               style={{
                 fontSize: "11px",
@@ -1659,40 +1818,67 @@ export default function App() {
                 Click to inspect kinematic details
               </span>
             </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "4px 10px",
-                backgroundColor: "var(--color-green-tint)",
-                border: "1px solid var(--color-border-green)",
-                borderRadius: "3px",
-              }}
-            >
-              <div
-                style={{
-                  width: "6px",
-                  height: "6px",
-                  borderRadius: "50%",
-                  backgroundColor: "#22C55E",
-                }}
-                className="animate-pulse"
-              />
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <span
                 style={{
                   fontSize: "10px",
                   fontFamily: "var(--font-mono)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                  color: "var(--color-green-fairway)",
+                  padding: "3px 8px",
+                  borderRadius: "3px",
+                  backgroundColor:
+                    aiSource === "gemini"
+                      ? "rgba(34, 197, 94, 0.12)"
+                      : "var(--color-cream)",
+                  border: `1px solid ${
+                    aiSource === "gemini" ? "#22C55E" : "var(--color-border)"
+                  }`,
+                  color:
+                    aiSource === "gemini" ? "#15803D" : "var(--color-charcoal)",
+                  fontWeight: "600",
                 }}
               >
-                Active Tracking Phase:{" "}
-                <strong style={{ color: "var(--color-charcoal)" }}>
-                  {activePhase}
-                </strong>
+                {aiSource === "gemini"
+                  ? "✨ Gemini 2.5 Flash Dynamic"
+                  : aiSource === "algorithmic"
+                    ? "⚡ Kinematic Sequence Dynamic"
+                    : "PGA Elite Model Benchmark"}
               </span>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "4px 10px",
+                  backgroundColor: "var(--color-green-tint)",
+                  border: "1px solid var(--color-border-green)",
+                  borderRadius: "3px",
+                }}
+              >
+                <div
+                  style={{
+                    width: "6px",
+                    height: "6px",
+                    borderRadius: "50%",
+                    backgroundColor: "#22C55E",
+                  }}
+                  className="animate-pulse"
+                />
+                <span
+                  style={{
+                    fontSize: "10px",
+                    fontFamily: "var(--font-mono)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                    color: "var(--color-green-fairway)",
+                  }}
+                >
+                  Active Tracking Phase:{" "}
+                  <strong style={{ color: "var(--color-charcoal)" }}>
+                    {activePhase}
+                  </strong>
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1704,7 +1890,7 @@ export default function App() {
               gap: "10px",
             }}
           >
-            {PHASES.map((phase) => {
+            {phases.map((phase) => {
               const isWeakest = phase.score === weakestPhaseScore
               const isSelected = phase.name === activePhase
               return (
@@ -2137,7 +2323,7 @@ export default function App() {
             </div>
 
             <div>
-              {PGA_COMPARISONS.map((c) => (
+              {pgaComparisons.map((c) => (
                 <ComparisonBar key={c.label} {...c} />
               ))}
             </div>
@@ -2324,7 +2510,7 @@ export default function App() {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
-              {COACH_INSIGHTS.map((insight, i) => (
+              {coachInsights.map((insight, i) => (
                 <div
                   key={insight.index}
                   className={showResults ? "animate-fade-in" : ""}
@@ -2332,7 +2518,7 @@ export default function App() {
                     paddingTop: "16px",
                     paddingBottom: "20px",
                     borderBottom:
-                      i < COACH_INSIGHTS.length - 1
+                      i < coachInsights.length - 1
                         ? "1px solid var(--color-border)"
                         : "none",
                     animationDelay: `${i * 0.15}s`,
@@ -2461,6 +2647,164 @@ export default function App() {
           </span>
         </div>
       </main>
+
+      {/* ── AI Analyzing HUD / Loading Overlay ── */}
+      {isAiAnalyzing && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3.5 px-5 py-3.5 bg-[#151914]/95 text-white backdrop-blur-md rounded-lg border border-[#22C55E]/60 shadow-[0_10px_35px_rgba(0,0,0,0.5)] animate-fade-in">
+          <div className="w-5 h-5 rounded-full border-2 border-[#22C55E] border-t-transparent animate-spin shrink-0" />
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-bold text-[#22C55E] tracking-wider uppercase">
+                {geminiApiKey ? "Gemini 2.5 Flash AI" : "Kinematic Engine"}
+              </span>
+              <span className="text-[10px] text-[#A6B2A3] font-mono">
+                Analyzing Swing...
+              </span>
+            </div>
+            <span className="text-[11px] text-[#D4CFC6] mt-0.5">
+              Evaluating 6 phases, pelvic/shoulder sequence & Tour benchmarks
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Google Gemini API Key Settings Modal ── */}
+      {showApiKeyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-lg bg-[#FAF8F5] dark:bg-[#1A1E18] rounded-lg border border-[#D4CFC6] dark:border-[#384334] shadow-2xl p-6 overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-4 border-b border-[#E5E0D8] dark:border-[#2C3529]">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-md bg-[#22C55E]/15 text-[#22C55E]">
+                  <Sparkles size={18} />
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-semibold text-[#1F241E] dark:text-[#F4F6F3]">
+                    Google Gemini AI Diagnostics
+                  </h3>
+                  <p className="text-xs font-mono text-[#737E70] dark:text-[#8FA888]">
+                    Option 2 · Dynamic Multimodal Swing Biomechanics
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowApiKeyModal(false)}
+                className="p-1 rounded text-[#737E70] hover:text-[#1F241E] dark:hover:text-white cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="py-4 space-y-4">
+              <p className="text-xs text-[#4A5247] dark:text-[#C5CEBC] leading-relaxed">
+                Connect your Gemini API Key to enable dynamic kinematic
+                diagnostics. Every swing captured during your 8-second window is
+                evaluated with <strong>gemini-2.5-flash</strong> using structured
+                biomechanical scoring against PGA Tour elite reference models.
+              </p>
+
+              <div>
+                <label className="block text-xs font-mono uppercase tracking-wider font-semibold text-[#1F241E] dark:text-[#E6ECE3] mb-1.5">
+                  Gemini API Key
+                </label>
+                <div className="relative flex items-center">
+                  <Key
+                    size={14}
+                    className="absolute left-3 text-[#737E70] pointer-events-none"
+                  />
+                  <input
+                    type="password"
+                    value={apiKeyInput}
+                    onChange={(e) => {
+                      setApiKeyInput(e.target.value)
+                      setApiKeyTestMessage(null)
+                    }}
+                    placeholder="AIzaSy..."
+                    className="w-full pl-9 pr-3 py-2 text-xs font-mono bg-white dark:bg-[#121511] border border-[#D4CFC6] dark:border-[#384334] rounded text-[#1F241E] dark:text-[#F4F6F3] focus:outline-none focus:border-[#22C55E]"
+                  />
+                </div>
+                <div className="flex items-center justify-between mt-1.5">
+                  <span className="text-[10px] text-[#737E70] dark:text-[#8FA888] font-mono">
+                    Stored locally in your browser (never sent elsewhere)
+                  </span>
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-mono text-[#22C55E] hover:underline flex items-center gap-1"
+                  >
+                    <span>Get free Gemini API Key</span>
+                    <ExternalLink size={10} />
+                  </a>
+                </div>
+              </div>
+
+              {/* Status Message */}
+              {apiKeyTestMessage && (
+                <div
+                  className={`p-2.5 rounded text-xs font-mono ${
+                    apiKeyTestMessage.startsWith("✓")
+                      ? "bg-[#22C55E]/15 text-[#15803D] dark:text-[#22C55E] border border-[#22C55E]/40"
+                      : "bg-[#EF4444]/15 text-[#B91C1C] dark:text-[#F87171] border border-[#EF4444]/40"
+                  }`}
+                >
+                  {apiKeyTestMessage}
+                </div>
+              )}
+
+              {/* Fallback Notice */}
+              <div className="p-3 rounded bg-[#FAF5EB] dark:bg-[#222820] border border-[#E8DFC8] dark:border-[#364032]">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-[#8C6D23] dark:text-[#EAB308] font-mono mb-1">
+                  <Zap size={13} />
+                  <span>Smart Kinematic Fallback Active</span>
+                </div>
+                <p className="text-[11px] text-[#635738] dark:text-[#A6B2A3] leading-normal">
+                  If no API key is provided, the dashboard automatically runs its
+                  local kinematic biomechanics engine calculating realistic scores,
+                  PGA deltas, and drills directly from your captured motion.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-4 border-t border-[#E5E0D8] dark:border-[#2C3529] gap-2">
+              <button
+                onClick={() => {
+                  setApiKeyInput("")
+                  setGeminiApiKey("")
+                  localStorage.removeItem("gemini_api_key")
+                  setApiKeyTestMessage(null)
+                  setShowApiKeyModal(false)
+                  setCapturedNotification(
+                    "⚡ Switched to Local Kinematic Biomechanics Engine.",
+                  )
+                  setTimeout(() => setCapturedNotification(null), 4000)
+                }}
+                className="px-3 py-1.5 text-xs font-mono text-[#737E70] hover:text-[#C0503A] cursor-pointer"
+              >
+                Clear / Run Local
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleTestApiKey}
+                  disabled={isTestingKey || !apiKeyInput.trim()}
+                  className="px-3 py-1.5 rounded border border-[#D4CFC6] dark:border-[#384334] text-xs font-mono text-[#4A5247] dark:text-[#C5CEBC] hover:border-[#22C55E] cursor-pointer disabled:opacity-50 transition-all"
+                >
+                  {isTestingKey ? "Testing..." : "Test Connection"}
+                </button>
+                <button
+                  onClick={handleSaveApiKey}
+                  className="px-4 py-1.5 rounded bg-[#22C55E] hover:bg-[#16A34A] text-[#0D150B] font-semibold text-xs font-mono cursor-pointer transition-all shadow-sm"
+                >
+                  Save & Apply
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

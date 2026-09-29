@@ -19,6 +19,11 @@ import {
   AlertCircle,
   Maximize2,
   Minimize2,
+  Volume2,
+  VolumeX,
+  Clock,
+  Timer,
+  Square,
 } from "lucide-react"
 import {
   GolfBodyPoints,
@@ -29,6 +34,7 @@ import {
   generateDemoGolfSwingPoints,
   BODY_PART_LABELS,
 } from "../utils/poseTracker"
+import { CapturedSwingPayload, SwingFrameData } from "../utils/aiCoachService"
 
 export interface CameraMotionTrackerHandle {
   toggleFullscreen: () => void
@@ -38,7 +44,7 @@ export interface CameraMotionTrackerHandle {
 interface CameraMotionTrackerProps {
   activePhase?: string
   onPhaseDetected?: (phase: string) => void
-  onSwingCaptured?: (metrics: {
+  onSwingCaptured?: (metrics: CapturedSwingPayload & {
     shoulderTurn: number
     hipRotation: number
     phase: string
@@ -67,6 +73,10 @@ const CameraMotionTracker =
       const [isModelLoading, setIsModelLoading] = useState(false)
       const [isRecording, setIsRecording] = useState(false)
       const [countdown, setCountdown] = useState<number | null>(null)
+      const [countdownDuration, setCountdownDuration] = useState<number>(8) // generous 8s preparation timer
+      const [captureDuration, setCaptureDuration] = useState<number>(8) // generous 8s swing capture window
+      const [recordingRemainingSec, setRecordingRemainingSec] = useState<number>(8)
+      const [audioEnabled, setAudioEnabled] = useState<boolean>(true)
       const [recordingProgress, setRecordingProgress] = useState(0)
       const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -90,8 +100,11 @@ const CameraMotionTracker =
       const poseLandmarkerRef = useRef<any>(null)
       const isMountedRef = useRef(true)
       const recordingTimerRef = useRef<any>(null)
+      const countIntervalRef = useRef<any>(null)
       const startTimeRef = useRef<number>(performance.now())
       const lastPhaseRef = useRef<string>("")
+      const telemetryRef = useRef<SwingTelemetry>(telemetry)
+      const frameBufferRef = useRef<SwingFrameData[]>([])
 
       // Full Screen Toggle Engine (Dual support: HTML5 Fullscreen API + CSS Viewport Expand)
       const toggleFullScreen = useCallback(async () => {
@@ -284,56 +297,191 @@ const CameraMotionTracker =
         setIsDemoMode(true)
       }
 
-      // Trigger Swing Recording with countdown
-      const handleTriggerRecord = () => {
-        if (isRecording || countdown !== null) return
-        setCountdown(3)
-        let count = 3
-        const countInterval = setInterval(() => {
-          count -= 1
-          if (count > 0) {
-            setCountdown(count)
-          } else {
-            clearInterval(countInterval)
-            setCountdown(null)
-            startSwingCapture()
+      // Web Audio Synthesizer for Ergonomic Solo Swing Practice
+      const playTone = useCallback(
+        (
+          freq: number,
+          durationMs: number,
+          type: OscillatorType = "sine",
+          gainVal = 0.15,
+        ) => {
+          if (!audioEnabled) return
+          try {
+            const AudioCtx =
+              window.AudioContext || (window as any).webkitAudioContext
+            if (!AudioCtx) return
+            const ctx = new AudioCtx()
+            const osc = ctx.createOscillator()
+            const gain = ctx.createGain()
+            osc.type = type
+            osc.frequency.setValueAtTime(freq, ctx.currentTime)
+            gain.gain.setValueAtTime(gainVal, ctx.currentTime)
+            gain.gain.exponentialRampToValueAtTime(
+              0.0001,
+              ctx.currentTime + durationMs / 1000,
+            )
+            osc.connect(gain)
+            gain.connect(ctx.destination)
+            osc.start()
+            osc.stop(ctx.currentTime + durationMs / 1000)
+          } catch (e) {
+            // Audio permission or context restricted
           }
-        }, 1000)
-      }
+        },
+        [audioEnabled],
+      )
 
-      const startSwingCapture = () => {
+      // Cancel preparation countdown
+      const handleCancelCountdown = useCallback(() => {
+        if (countIntervalRef.current) {
+          clearInterval(countIntervalRef.current)
+          countIntervalRef.current = null
+        }
+        setCountdown(null)
+      }, [])
+
+      // Complete swing capture: calculate kinematic sequence & pass payload
+      const completeSwingCapture = useCallback(() => {
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current)
+          recordingTimerRef.current = null
+        }
+        setIsRecording(false)
+        setRecordingProgress(100)
+
+        // Pleasant completion chime
+        playTone(523, 100, "triangle", 0.15)
+        setTimeout(() => playTone(659, 160, "sine", 0.18), 100)
+
+        const frames = frameBufferRef.current
+        const cur = telemetryRef.current
+
+        // Calculate peak dynamic metrics across the entire capture window
+        let maxShoulder = Math.abs(cur.shoulderAngleDeg) || 0
+        let maxHip = Math.abs(cur.hipAngleDeg) || 0
+        let spineSum = 0
+
+        frames.forEach((f) => {
+          if (Math.abs(f.shoulderAngle) > maxShoulder) {
+            maxShoulder = Math.abs(f.shoulderAngle)
+          }
+          if (Math.abs(f.hipAngle) > maxHip) {
+            maxHip = Math.abs(f.hipAngle)
+          }
+          spineSum += f.spineTilt
+        })
+
+        const peakShoulder = maxShoulder > 20 ? Math.round(maxShoulder) : 89
+        const peakHip = maxHip > 15 ? Math.round(maxHip) : 42
+        const avgSpine =
+          frames.length > 0
+            ? Math.round(spineSum / frames.length)
+            : Math.round(cur.spineTiltDeg) || 25
+        const estSpeed = Math.round(84 + (peakShoulder / 95) * 14)
+
+        const payload: CapturedSwingPayload & {
+          shoulderTurn: number
+          hipRotation: number
+          phase: string
+          clubSpeed: number
+        } = {
+          peakShoulderTurn: peakShoulder,
+          peakHipRotation: peakHip,
+          spineTilt: avgSpine,
+          leadArmAngle: Math.round(cur.leadArmAngleDeg) || 35,
+          detectedPhase: cur.detectedPhase || "Impact",
+          clubSpeed: estSpeed,
+          durationSec: captureDuration,
+          frames,
+          shoulderTurn: peakShoulder,
+          hipRotation: peakHip,
+          phase: cur.detectedPhase || "Impact",
+        }
+
+        if (onSwingCaptured) {
+          onSwingCaptured(payload)
+        }
+      }, [captureDuration, onSwingCaptured, playTone])
+
+      const startSwingCapture = useCallback(() => {
         setIsRecording(true)
         setRecordingProgress(0)
+        setRecordingRemainingSec(captureDuration)
+        frameBufferRef.current = []
 
-        const duration = 3200 // ms
+        const duration = captureDuration * 1000 // ms
         const stepInterval = 50
         let elapsed = 0
 
-        recordingTimerRef.current = setInterval(
-          () => {
-            elapsed += stepInterval
-            const pct = Math.min(100, Math.round((elapsed / duration) * 100))
-            setRecordingProgress(pct)
+        recordingTimerRef.current = setInterval(() => {
+          elapsed += stepInterval
+          const pct = Math.min(100, Math.round((elapsed / duration) * 100))
+          setRecordingProgress(pct)
+          setRecordingRemainingSec(
+            Math.max(0, parseFloat(((duration - elapsed) / 1000).toFixed(1))),
+          )
 
-            if (elapsed >= duration) {
-              clearInterval(recordingTimerRef.current)
-              setIsRecording(false)
-              setRecordingProgress(100)
+          // Sample kinematic frame into trajectory buffer
+          const cur = telemetryRef.current
+          frameBufferRef.current.push({
+            timeMs: elapsed,
+            shoulderAngle: cur.shoulderAngleDeg,
+            hipAngle: cur.hipAngleDeg,
+            spineTilt: cur.spineTiltDeg,
+            leadArmAngle: cur.leadArmAngleDeg,
+            phase: cur.detectedPhase,
+          })
 
-              // Notify parent dashboard
-              if (onSwingCaptured) {
-                onSwingCaptured({
-                  shoulderTurn: Math.abs(telemetry.shoulderAngleDeg) || 89,
-                  hipRotation: Math.abs(telemetry.hipAngleDeg) || 42,
-                  phase: telemetry.detectedPhase || "Impact",
-                  clubSpeed: 96,
-                })
-              }
+          if (elapsed >= duration) {
+            completeSwingCapture()
+          }
+        }, stepInterval)
+      }, [captureDuration, completeSwingCapture])
+
+      // Trigger Swing Recording with generous preparation countdown
+      const handleTriggerRecord = useCallback(() => {
+        if (isRecording || countdown !== null) return
+        handleCancelCountdown()
+
+        setCountdown(countdownDuration)
+        let count = countdownDuration
+
+        // Initial readiness audio beep
+        playTone(440, 100, "sine", 0.12)
+
+        countIntervalRef.current = setInterval(() => {
+          count -= 1
+          if (count > 0) {
+            setCountdown(count)
+            // Auditory guidance: gentle ticks, then rising pitch on 3, 2, 1
+            if (count > 3) {
+              playTone(440, 60, "sine", 0.08)
+            } else if (count === 3) {
+              playTone(523, 100, "triangle", 0.16)
+            } else if (count === 2) {
+              playTone(659, 110, "triangle", 0.18)
+            } else if (count === 1) {
+              playTone(784, 130, "triangle", 0.2)
             }
-          },
-          stepInterval,
-        )
-      }
+          } else {
+            if (countIntervalRef.current) {
+              clearInterval(countIntervalRef.current)
+              countIntervalRef.current = null
+            }
+            setCountdown(null)
+            // Go! High chime on capture start
+            playTone(1046, 240, "sine", 0.25)
+            startSwingCapture()
+          }
+        }, 1000)
+      }, [
+        isRecording,
+        countdown,
+        countdownDuration,
+        handleCancelCountdown,
+        playTone,
+        startSwingCapture,
+      ])
 
       // Animation and Tracking Loop
       useEffect(() => {
@@ -405,6 +553,7 @@ const CameraMotionTracker =
 
             const currentTelem = calculateSwingTelemetry(currentPoints)
             setTelemetry(currentTelem)
+            telemetryRef.current = currentTelem
 
             if (
               onPhaseDetected &&
@@ -427,6 +576,8 @@ const CameraMotionTracker =
             cancelAnimationFrame(animFrameIdRef.current)
           if (recordingTimerRef.current)
             clearInterval(recordingTimerRef.current)
+          if (countIntervalRef.current)
+            clearInterval(countIntervalRef.current)
         }
       }, [isCameraActive, isDemoMode, isMirrored, showLabels])
 
@@ -543,24 +694,83 @@ const CameraMotionTracker =
                 <span className="font-mono text-[10px]">Labels</span>
               </button>
 
+              {/* Ergonomic Duration Controls for Solo Practice */}
+              <button
+                onClick={() =>
+                  setCountdownDuration((prev) =>
+                    prev === 5 ? 8 : prev === 8 ? 12 : 5,
+                  )
+                }
+                title="Preparation countdown before swing capture begins. Gives you time to walk to the mat, grip your club, and set posture."
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-[#363E33] bg-[#262B24] text-[#C5CEBC] hover:border-[#4B5647] cursor-pointer transition-all"
+              >
+                <Timer size={13} className="text-[#22C55E]" />
+                <span className="font-mono text-[11px]">
+                  Ready:{" "}
+                  <strong className="text-white">{countdownDuration}s</strong>
+                </span>
+              </button>
+
+              <button
+                onClick={() =>
+                  setCaptureDuration((prev) =>
+                    prev === 6 ? 8 : prev === 8 ? 10 : 6,
+                  )
+                }
+                title="Active swing motion recording window. Generous time for full takeaway, transition, impact, and holding the finish."
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-[#363E33] bg-[#262B24] text-[#C5CEBC] hover:border-[#4B5647] cursor-pointer transition-all"
+              >
+                <Clock size={13} className="text-[#22C55E]" />
+                <span className="font-mono text-[11px]">
+                  Capture:{" "}
+                  <strong className="text-white">{captureDuration}s</strong>
+                </span>
+              </button>
+
+              {/* Web Audio Chimes Mute / Unmute */}
+              <button
+                onClick={() => setAudioEnabled((v) => !v)}
+                title={
+                  audioEnabled
+                    ? "Audio chimes active (3-2-1 beep + swing chime). Click to mute."
+                    : "Audio cues muted. Click to enable sound guidance."
+                }
+                className={`p-1.5 rounded border transition-all cursor-pointer ${
+                  audioEnabled
+                    ? "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/40"
+                    : "bg-[#262B24] text-[#737E70] border-[#363E33]"
+                }`}
+              >
+                {audioEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+              </button>
+
               {/* Record Swing Button */}
               {(isCameraActive || isDemoMode) && (
                 <button
-                  onClick={handleTriggerRecord}
-                  disabled={isRecording || countdown !== null}
-                  title="Trigger 3-second swing capture (or press Space)"
+                  onClick={
+                    isRecording ? completeSwingCapture : handleTriggerRecord
+                  }
+                  title={
+                    isRecording
+                      ? "Finish recording early and analyze now"
+                      : countdown !== null
+                        ? "Counting down... Press Esc or click Cancel in view to abort"
+                        : `Start ${countdownDuration}s preparation timer, then ${captureDuration}s swing capture (or press Space)`
+                  }
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded cursor-pointer transition-all ${
                     isRecording
-                      ? "bg-[#C0503A] text-white animate-pulse"
+                      ? "bg-[#C0503A] hover:bg-[#D45942] text-white animate-pulse shadow-md"
                       : countdown !== null
                         ? "bg-[#EAB308] text-[#1D211C]"
-                        : "bg-[#3F5E38] hover:bg-[#4E7245] text-white"
+                        : "bg-[#3F5E38] hover:bg-[#4E7245] text-white shadow-sm"
                   }`}
                 >
                   {isRecording ? (
                     <>
-                      <div className="w-2 h-2 rounded-full bg-white animate-ping" />
-                      <span>Recording ({recordingProgress}%)</span>
+                      <Square size={11} className="fill-white" />
+                      <span>
+                        Recording ({recordingRemainingSec.toFixed(1)}s)
+                      </span>
                     </>
                   ) : countdown !== null ? (
                     <>
@@ -727,41 +937,72 @@ const CameraMotionTracker =
               </div>
             )}
 
-            {/* Countdown Overlay (3, 2, 1) */}
+            {/* Countdown Overlay (Preparation & Walk-to-Mat Timer) */}
             {countdown !== null && (
-              <div className="absolute inset-0 z-30 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center pointer-events-none">
-                <span
-                  className={`font-serif font-bold text-[#22C55E] animate-ping ${
-                    isFullscreen ? "text-9xl" : "text-8xl"
-                  }`}
-                >
-                  {countdown}
-                </span>
+              <div className="absolute inset-0 z-30 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center pointer-events-auto">
+                <div className="relative flex items-center justify-center mb-4">
+                  <div className="w-32 h-32 md:w-40 md:h-40 rounded-full border-4 border-[#22C55E]/40 flex items-center justify-center bg-[#151914]/80 shadow-[0_0_30px_rgba(34,197,94,0.2)]">
+                    <span
+                      className={`font-serif font-bold text-[#22C55E] ${
+                        isFullscreen
+                          ? "text-8xl md:text-9xl"
+                          : "text-7xl md:text-8xl"
+                      }`}
+                    >
+                      {countdown}
+                    </span>
+                  </div>
+                </div>
                 <p
-                  className={`font-mono uppercase tracking-widest text-[#E6ECE3] mt-4 ${
-                    isFullscreen ? "text-base font-semibold" : "text-sm"
+                  className={`font-mono uppercase tracking-widest text-[#E6ECE3] font-semibold text-center px-4 ${
+                    isFullscreen ? "text-lg" : "text-sm"
                   }`}
                 >
-                  Assume Address Position
+                  Walk to Mat · Assume Address Posture
                 </p>
+                <p className="text-xs text-[#8FA888] font-mono mt-1 mb-5 flex items-center gap-1.5">
+                  <span>
+                    {audioEnabled
+                      ? "🔊 Audio cues will chime 3 · 2 · 1 · SWING!"
+                      : "🔇 Sound muted (enable icon top right for audio cues)"}
+                  </span>
+                </p>
+                <button
+                  onClick={handleCancelCountdown}
+                  className="px-4 py-1.5 rounded bg-[#2A3127] hover:bg-[#384334] border border-[#44523F] text-xs font-mono text-[#D4CFC6] cursor-pointer transition-all shadow-md"
+                >
+                  Cancel Preparation [Esc]
+                </button>
               </div>
             )}
 
             {/* Recording Progress HUD */}
             {isRecording && (
-              <div className="absolute top-4 left-4 z-20 flex items-center gap-3 px-3.5 py-2 bg-black/85 backdrop-blur-md rounded-md border border-[#C0503A]/70 shadow-2xl">
-                <div className="w-3 h-3 rounded-full bg-[#EF4444] animate-pulse shadow-[0_0_8px_#EF4444]" />
+              <div className="absolute top-4 left-4 z-20 flex items-center gap-3.5 px-4 py-2.5 bg-black/90 backdrop-blur-md rounded-md border border-[#C0503A] shadow-2xl">
+                <div className="w-3 h-3 rounded-full bg-[#EF4444] animate-ping" />
                 <div className="flex flex-col">
-                  <span className="font-mono text-[10px] font-bold text-white tracking-widest uppercase">
-                    CAPTURING SWING MOTION
-                  </span>
-                  <div className="w-36 h-1.5 bg-[#333] rounded-full overflow-hidden mt-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="font-mono text-[10px] font-bold text-white tracking-widest uppercase">
+                      CAPTURING SWING MOTION
+                    </span>
+                    <span className="font-mono text-[11px] text-[#22C55E] font-bold">
+                      {recordingRemainingSec.toFixed(1)}s left
+                    </span>
+                  </div>
+                  <div className="w-44 h-1.5 bg-[#333] rounded-full overflow-hidden mt-1.5">
                     <div
                       className="h-full bg-[#22C55E] transition-all duration-75"
                       style={{ width: `${recordingProgress}%` }}
                     />
                   </div>
                 </div>
+                <button
+                  onClick={completeSwingCapture}
+                  className="ml-2 px-2.5 py-1 bg-[#C0503A]/25 hover:bg-[#C0503A]/60 border border-[#C0503A] text-white text-[10px] font-mono uppercase tracking-wider rounded cursor-pointer transition-all"
+                  title="Completed swing? Click to analyze now without waiting"
+                >
+                  Done Early
+                </button>
               </div>
             )}
 

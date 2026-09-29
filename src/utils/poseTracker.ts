@@ -69,7 +69,7 @@ export const GOLF_SKELETON_CONNECTIONS: Connection[] = [
   ["rightKnee", "rightFoot"],
 ]
 
-export const BODY_PART_LABELS: { key: keyof GolfBodyPoints label: string }[] = [
+export const BODY_PART_LABELS: { key: keyof GolfBodyPoints; label: string }[] = [
   { key: "head", label: "Head" },
   { key: "chest", label: "Chest" },
   { key: "stomach", label: "Stomach" },
@@ -94,7 +94,7 @@ export const BODY_PART_LABELS: { key: keyof GolfBodyPoints label: string }[] = [
  * Maps raw MediaPipe 33 landmarks into the specific 10 golf body parts required
  */
 export function extractGolfBodyPoints(
-  landmarks: Array<{ x: number y: number visibility?: number }>,
+  landmarks: Array<{ x: number; y: number; visibility?: number }>,
 ): GolfBodyPoints | null {
   if (!landmarks || landmarks.length < 33) return null
 
