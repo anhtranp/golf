@@ -4,6 +4,15 @@
 
 ---
 
+[![React 19](https://img.shields.io/badge/React-19.0-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![MediaPipe](https://img.shields.io/badge/Google-MediaPipe%20Vision-0078D4?logo=google&logoColor=white)](https://developers.google.com/mediapipe)
+[![Tailwind CSS v4](https://img.shields.io/badge/Tailwind-CSS%20v4-38BDF8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Vite 8](https://img.shields.io/badge/Vite-8.0-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+
+---
+
 ## 📋 Table of Contents
 
 - [Visual Tour & Key Features](#-visual-tour--key-features)
@@ -30,6 +39,12 @@
 ![Real-Time Vision AI Motion Capture Studio](docs/screenshots/02-motion-tracker-active.png)
 
 * **Dual-Inference Engine:** Automatically initializes Google MediaPipe's `PoseLandmarker` for real-time webcam skeletal estimation. If a webcam is unavailable or permissions are denied, it seamlessly switches to an onboard high-fidelity biomechanical kinematics engine (`generateDemoGolfSwingPoints`).
+* **Google Gemini AI Backend (Option 2):** Connect your Google Gemini API Key (`@google/genai`, `gemini-2.5-flash`) for dynamic structured AI biomechanical swing analysis, individualized phase scores, PGA Tour deltas, and tailored corrective drills.
+* **Ergonomic Solo Practice Timers:** 
+  * **8-Second Preparation Countdown:** Press <kbd>Space</kbd> or click Record, walk 8–10 feet to the mat, grip your club, and set posture without rushing. Selectable duration: `5s` / `8s` (default) / `12s`.
+  * **Auditory Web Audio Chimes:** Synthesizes clear audio tones at 3, 2, 1 seconds and a crisp chime on swing start ("BEEP — SWING!") so golfers never need to look at the screen while taking address.
+  * **8-Second Swing Capture Window:** Generous recording window capturing complete takeaway, backswing, transition, downswing, impact, and holding the finish pose. Selectable duration: `6s` / `8s` (default) / `10s` with a "Done Early" option.
+  * **Kinematic Trajectory Buffer:** Continuously samples angular velocity, peak shoulder turn, and pelvic unwinding across the entire capture window.
 * **High-Contrast Skeletal Wireframe:** Renders an emerald-glow (`#22C55E`) skeletal wireframe on an HTML5 canvas overlay at native display resolution with customizable joint label overlays.
 * **Live Telemetry HUD:** Displays real-time **Shoulder Turn Angle**, **Pelvic Hip Rotation**, **Spine Tilt Angle**, and **Inference Confidence %**.
 * **Real-Time Phase Indicator:** Automatically detects Address, Backswing, Top, Downswing, Impact, and Follow-through.
@@ -120,8 +135,8 @@ Built for frictionless hands-free or remote-friendly golf training:
 | Key | Action | Context |
 | :--- | :--- | :--- |
 | <kbd>F</kbd> | **Toggle Full Screen / Normal View** | Expands tracker to immersive full-screen display |
-| <kbd>Esc</kbd> | **Exit Full Screen** | Restores default dashboard layout |
-| <kbd>Space</kbd> | **Trigger Swing Capture** | Initiates 3-2-1 countdown while in stance |
+| <kbd>Esc</kbd> | **Exit Full Screen / Cancel Timer** | Restores layout or aborts active countdown |
+| <kbd>Space</kbd> | **Trigger Swing Capture** | Initiates 8s preparation countdown with audio cues |
 
 ---
 
@@ -130,7 +145,9 @@ Built for frictionless hands-free or remote-friendly golf training:
 * **Frontend Framework:** React 19 + TypeScript 5.7
 * **Build Tooling:** Vite 8 + `@tailwindcss/vite`
 * **Styling Engine:** Tailwind CSS v4 + Vanilla CSS Design Tokens
+* **AI & LLM Diagnostics:** `@google/genai` (Google Gemini 2.5 Flash API)
 * **Vision AI:** `@mediapipe/tasks-vision` (WebAssembly + WebGL GPU accelerated)
+* **Audio Feedback:** Web Audio API (zero-latency synthesized chimes)
 * **Icons:** `lucide-react`
 * **Formatting:** `oxfmt`
 
@@ -218,3 +235,8 @@ npm run preview
 
 For detailed functional specifications, mathematical models, non-functional requirements, and future roadmap, refer to the [Product Requirements Document (PRD.md)](docs/PRD.md).
 
+---
+
+## 📜 License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
