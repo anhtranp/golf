@@ -28,7 +28,7 @@
 ![Real-Time Vision AI Motion Capture Studio](docs/screenshots/02-motion-tracker-active.png)
 
 * **Dual-Inference Engine:** Automatically initializes Google MediaPipe's `PoseLandmarker` for real-time webcam skeletal estimation. If a webcam is unavailable or permissions are denied, it seamlessly switches to an onboard high-fidelity biomechanical kinematics engine (`generateDemoGolfSwingPoints`).
-* **Google Gemini AI Backend (Option 2):** Connect your Google Gemini API Key (`@google/genai`, `gemini-2.5-flash`) for dynamic structured AI biomechanical swing analysis, individualized phase scores, PGA Tour deltas, and tailored corrective drills.
+* **Google Gemini AI Backend:** Connect your Google Gemini API Key (`@google/genai`, `gemini-2.5-flash`) for dynamic structured AI biomechanical swing analysis, individualized phase scores, PGA Tour deltas, and tailored corrective drills.
 * **Ergonomic Solo Practice Timers:** 
   * **8-Second Preparation Countdown:** Press <kbd>Space</kbd> or click Record, walk 8–10 feet to the mat, grip your club, and set posture without rushing. Selectable duration: `5s` / `8s` (default) / `12s`.
   * **Auditory Web Audio Chimes:** Synthesizes clear audio tones at 3, 2, 1 seconds and a crisp chime on swing start ("BEEP — SWING!") so golfers never need to look at the screen while taking address.
