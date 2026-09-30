@@ -1,16 +1,5 @@
 # 🏌️‍♂️ Kinematic Vision AI — Premium AI Golf Motion Dashboard
 
-> An elite computer-vision powered golf swing motion capture and biomechanical analytics dashboard. Delivers real-time 60 FPS skeletal tracking across 10 kinematic zones, live telemetry HUD, dual full-screen studio mode, 6-phase swing segmentation, PGA Tour benchmark comparisons, and actionable AI coaching cues—running 100% client-side with zero cloud video transmission.
-
----
-
-[![React 19](https://img.shields.io/badge/React-19.0-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![MediaPipe](https://img.shields.io/badge/Google-MediaPipe%20Vision-0078D4?logo=google&logoColor=white)](https://developers.google.com/mediapipe)
-[![Tailwind CSS v4](https://img.shields.io/badge/Tailwind-CSS%20v4-38BDF8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Vite 8](https://img.shields.io/badge/Vite-8.0-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-
 ---
 
 ## 📋 Table of Contents
@@ -234,9 +223,5 @@ npm run preview
 ## 📄 Product Requirements Document
 
 For detailed functional specifications, mathematical models, non-functional requirements, and future roadmap, refer to the [Product Requirements Document (PRD.md)](docs/PRD.md).
-
----
-
-## 📜 License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
